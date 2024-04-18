@@ -77,7 +77,7 @@ fn main() {
         .add_systems(OnExit(GameState::Playing), teardown)
         .add_systems(
             Update,
-            (button_system,)
+            button_system
                 .run_if((in_state(GameState::Start)).or_else(in_state(GameState::GameOver))),
         )
         .add_systems(OnEnter(GameState::GameOver), game_over_menu)
@@ -244,19 +244,13 @@ fn snake_setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let border: Mesh2dHandle = meshes
-        .add(Rectangle::new(WINDOW_WIDTH, WINDOW_HEIGHT))
-        .into();
-
     let snake_cell: Mesh2dHandle = meshes.add(Rectangle::new(PIXEL_SIZE, PIXEL_SIZE)).into();
 
-    let color: Handle<ColorMaterial> = materials.add(SNAKE_HEAD_COLOR);
-
-    let border_color: Handle<ColorMaterial> = materials.add(Color::rgba(0., 0., 0., 0.2));
-
     commands.spawn(MaterialMesh2dBundle {
-        mesh: border.clone(),
-        material: border_color.clone(),
+        mesh: meshes
+            .add(Rectangle::new(WINDOW_WIDTH, WINDOW_HEIGHT))
+            .into(),
+        material: materials.add(Color::rgb(0.67, 0.55, 0.6)),
         transform: Transform::from_translation(Vec3::new(0., 0., 0.)),
         ..default()
     });
@@ -264,8 +258,8 @@ fn snake_setup(
     commands.spawn((
         MaterialMesh2dBundle {
             mesh: snake_cell.clone(),
-            material: color.clone(),
-            transform: Transform::from_translation(Vec3::new(0., 0., 0.)),
+            material: materials.add(SNAKE_HEAD_COLOR),
+            transform: Transform::from_translation(Vec3::new(0., 0., 2.)),
             ..default()
         },
         SnakeHead {
@@ -286,7 +280,7 @@ fn snake_setup(
                 transform: Transform::from_translation(Vec3::new(
                     0. - (PIXEL_SIZE * i as f32),
                     0.,
-                    0.,
+                    2.,
                 )),
                 ..default()
             },
@@ -298,8 +292,8 @@ fn snake_setup(
 
     loop {
         if defaults_positions_of_x.contains(&food_position[0])
-            && food_position != Vec2::new(0.0, 0.0)
-            && food_position != Vec2::new(0.0, -PIXEL_SIZE)
+            && food_position != Vec3::new(0.0, 0.0, 2.)
+            && food_position != Vec3::new(0.0, -PIXEL_SIZE, 2.)
         {
             break;
         }
@@ -307,15 +301,11 @@ fn snake_setup(
         food_position = get_random_position();
     }
 
-    let food_item: Mesh2dHandle = meshes.add(Circle::new((PIXEL_SIZE) / 2.)).into();
-
-    let food_color: Handle<ColorMaterial> = materials.add(Color::hex("#808000").unwrap());
-
     commands.spawn((
         MaterialMesh2dBundle {
-            mesh: food_item,
-            material: food_color,
-            transform: Transform::from_translation(food_position.extend(0.0)),
+            mesh: meshes.add(Circle::new((PIXEL_SIZE) / 2.)).into(),
+            material: materials.add(Color::hex("#808000").unwrap()),
+            transform: Transform::from_translation(food_position),
             ..default()
         },
         Food,
@@ -425,17 +415,14 @@ fn check_collision(
 
             let mut food_position = get_random_position();
 
-            let mut food_position_extended = food_position.extend(0.);
-
             loop {
-                if !body_positions.contains(&food_position_extended) {
+                if !body_positions.contains(&food_position) {
                     break;
                 }
                 food_position = get_random_position();
-                food_position_extended = food_position.extend(0.);
             }
 
-            food_query.single_mut().translation = food_position_extended;
+            food_query.single_mut().translation = food_position;
 
             let snake_cell: Mesh2dHandle =
                 meshes.add(Rectangle::new(PIXEL_SIZE, PIXEL_SIZE)).into();
@@ -444,7 +431,7 @@ fn check_collision(
                 MaterialMesh2dBundle {
                     mesh: snake_cell,
                     material: materials.add(SNAKE_BODY_COLOR),
-                    transform: Transform::from_translation(food_query.single_mut().translation),
+                    transform: Transform::from_translation(food_position),
                     ..default()
                 },
                 SnakeBody,
@@ -481,14 +468,14 @@ fn teardown(mut commands: Commands, entities: Query<Entity, (Without<Camera>, Wi
     }
 }
 
-fn get_random_position() -> Vec2 {
+fn get_random_position() -> Vec3 {
     println!("get_random_position");
     let mut rng = rand::thread_rng();
-    let x = (rng.gen_range(0..(WINDOW_WIDTH / PIXEL_SIZE) as i32)
+    let x: f32 = (rng.gen_range(0..(WINDOW_WIDTH / PIXEL_SIZE) as i32)
         - (((WINDOW_WIDTH / PIXEL_SIZE) as i32) / 2)) as f32
         * PIXEL_SIZE;
-    let y = (rng.gen_range(0..(WINDOW_HEIGHT / PIXEL_SIZE) as i32)
+    let y: f32 = (rng.gen_range(0..(WINDOW_HEIGHT / PIXEL_SIZE) as i32)
         - (((WINDOW_HEIGHT / PIXEL_SIZE) as i32) / 2)) as f32
         * PIXEL_SIZE;
-    Vec2::new(x, y)
+    Vec3::new(x, y, 2.)
 }
