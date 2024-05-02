@@ -48,8 +48,11 @@ struct Food;
 
 const BLACK_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
 const BLACK_TRANSPARENT_COLOR: Color = Color::rgb(0.15, 0.15, 0.15);
-const SNAKE_HEAD_COLOR: Color = Color::rgb(0.125, 0.35, 0.85);
-const SNAKE_BODY_COLOR: Color = Color::rgba(0.78, 0.48, 0.5, 0.8);
+const SNAKE_HEAD_COLOR: Color = Color::rgba(0.15, 0.15, 0.15, 1.);
+const SNAKE_BODY_COLOR: Color = Color::rgba(0.2, 0.2, 0.2, 0.8);
+const FOOD_COLOR_HEX: &str = "#780ddb";
+const SNAKE_Z_INDEX: f32 = 5.;
+const FOOD_Z_INDEX: f32 = 3.;
 
 fn main() {
     let background_color = ClearColor(Color::hex("#9bba59").unwrap());
@@ -72,7 +75,9 @@ fn main() {
         .add_systems(OnEnter(GameState::Playing), snake_setup)
         .add_systems(
             Update,
-            (move_forward, change_direction, check_collision).run_if(in_state(GameState::Playing)),
+            (change_direction, move_forward, check_collision)
+                .chain()
+                .run_if(in_state(GameState::Playing)),
         )
         .add_systems(OnExit(GameState::Playing), teardown)
         .add_systems(
@@ -250,7 +255,7 @@ fn snake_setup(
         mesh: meshes
             .add(Rectangle::new(WINDOW_WIDTH, WINDOW_HEIGHT))
             .into(),
-        material: materials.add(Color::rgb(0.67, 0.55, 0.6)),
+        material: materials.add(Color::rgba(0.8, 0.8, 0.8, 0.3)),
         transform: Transform::from_translation(Vec3::new(0., 0., 0.)),
         ..default()
     });
@@ -259,7 +264,7 @@ fn snake_setup(
         MaterialMesh2dBundle {
             mesh: snake_cell.clone(),
             material: materials.add(SNAKE_HEAD_COLOR),
-            transform: Transform::from_translation(Vec3::new(0., 0., 2.)),
+            transform: Transform::from_translation(Vec3::new(0., 0., SNAKE_Z_INDEX)),
             ..default()
         },
         SnakeHead {
@@ -280,7 +285,7 @@ fn snake_setup(
                 transform: Transform::from_translation(Vec3::new(
                     0. - (PIXEL_SIZE * i as f32),
                     0.,
-                    2.,
+                    SNAKE_Z_INDEX,
                 )),
                 ..default()
             },
@@ -304,7 +309,7 @@ fn snake_setup(
     commands.spawn((
         MaterialMesh2dBundle {
             mesh: meshes.add(Circle::new((PIXEL_SIZE) / 2.)).into(),
-            material: materials.add(Color::hex("#808000").unwrap()),
+            material: materials.add(Color::hex(FOOD_COLOR_HEX).unwrap()),
             transform: Transform::from_translation(food_position),
             ..default()
         },
@@ -375,7 +380,10 @@ fn change_direction(keyboard_input: Res<ButtonInput<KeyCode>>, mut query: Query<
 fn check_collision(
     mut snake_head_query: Query<&mut Transform, (With<SnakeHead>, Without<SnakeBody>)>,
     mut snake_body_query: Query<&mut Transform, (With<SnakeBody>, Without<SnakeHead>)>,
-    mut food_query: Query<&mut Transform, (With<Food>, Without<SnakeHead>, Without<SnakeBody>)>,
+    mut food_query: Query<
+        (&mut Transform, Entity),
+        (With<Food>, Without<SnakeHead>, Without<SnakeBody>),
+    >,
     mut next_state: ResMut<NextState<GameState>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -403,39 +411,61 @@ fn check_collision(
             next_state.set(GameState::GameOver)
         }
 
-        let food_transform = food_query.single_mut();
+        for (food_transform, food_entity) in food_query.iter_mut() {
+            if food_transform.translation.x == snake_head_transform.translation.x
+                && food_transform.translation.y == snake_head_transform.translation.y
+            {
+                let mut body_positions: Vec<Vec3> = vec![snake_head_transform.translation];
 
-        if food_transform.translation == snake_head_transform.translation {
-            let mut body_positions: Vec<Vec3> = vec![snake_head_transform.translation];
+                snake_body_query.iter_mut().for_each(|body_transform| {
+                    let temp_translation = body_transform.translation.clone();
+                    body_positions.push(temp_translation);
+                });
 
-            snake_body_query.iter_mut().for_each(|body_transform| {
-                let temp_translation = body_transform.translation.clone();
-                body_positions.push(temp_translation);
-            });
+                commands.entity(food_entity).despawn();
 
-            let mut food_position = get_random_position();
+                let snake_cell: Mesh2dHandle =
+                    meshes.add(Rectangle::new(PIXEL_SIZE, PIXEL_SIZE)).into();
 
-            loop {
-                if !body_positions.contains(&food_position) {
-                    break;
+                commands.spawn((
+                    MaterialMesh2dBundle {
+                        mesh: snake_cell,
+                        material: materials.add(SNAKE_BODY_COLOR),
+                        transform: Transform::from_translation(food_transform.translation.clone()),
+                        ..default()
+                    },
+                    SnakeBody,
+                ));
+
+                let mut new_food_position = get_random_position();
+
+                loop {
+                    let mut is_contains: bool = false;
+
+                    for body_cell in &body_positions {
+                        if body_cell.x == new_food_position.x && body_cell.y == new_food_position.y
+                        {
+                            is_contains = true;
+                            break;
+                        }
+                    }
+
+                    if !is_contains {
+                        new_food_position = get_random_position();
+                        break;
+                    }
                 }
-                food_position = get_random_position();
+
+                commands.spawn((
+                    MaterialMesh2dBundle {
+                        mesh: meshes.add(Circle::new((PIXEL_SIZE) / 2.)).into(),
+                        material: materials.add(Color::hex(FOOD_COLOR_HEX).unwrap()),
+                        transform: Transform::from_translation(new_food_position),
+                        ..default()
+                    },
+                    Food,
+                ));
             }
-
-            food_query.single_mut().translation = food_position;
-
-            let snake_cell: Mesh2dHandle =
-                meshes.add(Rectangle::new(PIXEL_SIZE, PIXEL_SIZE)).into();
-
-            commands.spawn((
-                MaterialMesh2dBundle {
-                    mesh: snake_cell,
-                    material: materials.add(SNAKE_BODY_COLOR),
-                    transform: Transform::from_translation(food_position),
-                    ..default()
-                },
-                SnakeBody,
-            ));
         }
     }
 }
@@ -469,7 +499,6 @@ fn teardown(mut commands: Commands, entities: Query<Entity, (Without<Camera>, Wi
 }
 
 fn get_random_position() -> Vec3 {
-    println!("get_random_position");
     let mut rng = rand::thread_rng();
     let x: f32 = (rng.gen_range(0..(WINDOW_WIDTH / PIXEL_SIZE) as i32)
         - (((WINDOW_WIDTH / PIXEL_SIZE) as i32) / 2)) as f32
@@ -477,5 +506,5 @@ fn get_random_position() -> Vec3 {
     let y: f32 = (rng.gen_range(0..(WINDOW_HEIGHT / PIXEL_SIZE) as i32)
         - (((WINDOW_HEIGHT / PIXEL_SIZE) as i32) / 2)) as f32
         * PIXEL_SIZE;
-    Vec3::new(x, y, 2.)
+    Vec3::new(x, y, FOOD_Z_INDEX)
 }
